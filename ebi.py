@@ -96,7 +96,7 @@ class EBI:
         0x01: 'RX WINDOW',
         0x02: 'TX ONLY',
     }
-    def __init__(self,dev, debug=False):
+    def __init__(self,dev, debug=True):
         self.debug = debug
         self.dev = dev
         self.ser = serial.Serial(self.dev,baudrate=9600,timeout=.1)
@@ -117,7 +117,7 @@ class EBI:
         length = (ans[0] << 8) + ans[1]
         ans += list(self.ser.read(length-2))
         if self.debug:
-            print('<<<', self.hex(ans))
+            print('ans <-', self.hex(ans))
         assert(ans[-1] == self.bcc(ans[:-1]))
         return ans[2:-1]
     def send(self,command):
@@ -126,7 +126,7 @@ class EBI:
         packet += command
         packet += [self.bcc(packet)]
         if self.debug:
-            print('>>>', self.hex(packet))
+            print('cmd ->', self.hex(packet))
         self.ser.write(bytes(packet))
         ans = self.read()
         assert(ans[0] == (command[0] | 0x80))
@@ -211,7 +211,10 @@ class EBI:
         ans = self.send([0x30])
         return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
     def network_start(self):
+        _timeout = self.ser.timeout
+        self.ser.timeout = 3
         ans = self.send([0x31])
+        self.ser.timeout = _timeout
         return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
     def send_data(self, payload, protocol=0, dst=None, port=1):
         assert(protocol in [0,1])
@@ -267,7 +270,7 @@ class EBI:
         }
 
 if __name__ == "__main__":
-    device = "/dev/ttyUSB0"
+    device = "/dev/ttyS6"
     try:
         device = sys.argv[1]
     except:

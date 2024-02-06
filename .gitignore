@@ -1,2 +1,6 @@
 __pycache__
 .*.swp
+._.DS_Store
+.DS_Store
+.gitconfig
+.gitignore

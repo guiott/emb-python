@@ -202,7 +202,7 @@ Usage: report"""
         print("{'debug': %s}" % self._e.debug)  
     
     def do_default(self, arg):
-        """print all the setting parameter
+        """reset all the setting parameter to default
 Usage: default"""
         #self._e.debug = False
         print("{'debug': %s}" % self._e.debug)  

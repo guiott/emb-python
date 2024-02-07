@@ -3,3 +3,4 @@ __pycache__
 ._.DS_Store
 .DS_Store
 .gitconfig
+._receiver.py

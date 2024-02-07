@@ -98,11 +98,15 @@ class EBI:
     }
     def __init__(self,dev, debug=True):
         self.debug = debug
+        if self.debug:
+            print("---Start Init")
         self.dev = dev
         self.ser = serial.Serial(self.dev,baudrate=9600,timeout=.1)
         self.state = self.device_info()
         self.state.update(self.device_state())
         self.state.update(self.firmware_version())
+        if self.debug:
+            print("Init End---")
     def __del__(self):
         if getattr(self, 'ser', None):
             self.ser.close()
@@ -117,7 +121,7 @@ class EBI:
         length = (ans[0] << 8) + ans[1]
         ans += list(self.ser.read(length-2))
         if self.debug:
-            print('ans <-', self.hex(ans))
+            print('   ans <-', self.hex(ans))
         assert(ans[-1] == self.bcc(ans[:-1]))
         return ans[2:-1]
     def send(self,command):
@@ -126,22 +130,34 @@ class EBI:
         packet += command
         packet += [self.bcc(packet)]
         if self.debug:
-            print('cmd ->', self.hex(packet))
+            print('   cmd ->', self.hex(packet))
         self.ser.write(bytes(packet))
         ans = self.read()
         assert(ans[0] == (command[0] | 0x80))
         return ans[1:]
     def device_info(self):
+        if self.debug:
+            print('Device Info')
         ans = self.send([0x01])
+        if self.debug:
+            print('      Protocol: ', EBI.PROTOCOL.get(ans[0], None))
+            print('      Module  : ', EBI.EMBIT_MODULE.get(ans[1], None))
+            print('      MAC/UUID: ', self.hex(ans[2:]))
         return {
             'ebi_protocol': EBI.PROTOCOL.get(ans[0], None),
             'embit_module': EBI.EMBIT_MODULE.get(ans[1], None),
             'uuid': self.hex(ans[2:]),
         }
     def device_state(self):
+        if self.debug:
+            print('Device State')
         ans = self.send([0x04])
+        if self.debug:
+            print('      Status  : ', EBI.DEVICE_STATE.get(ans[0], None))
         return { 'state': EBI.DEVICE_STATE.get(ans[0], None) }
     def reset(self):
+        if self.debug:
+            print("---Start Reset")        
         ans = self.send([0x05])
         _timeout = self.ser.timeout
         self.ser.timeout = 3
@@ -149,11 +165,21 @@ class EBI:
         self.ser.timeout = _timeout
         assert(boot[0] == 0x84)
         self.state['state'] = boot[1]
+        if self.debug:
+            print('      Status  : ', EBI.STATUS.get(ans[0],ans[0]))
+            print('      BOOT    : ', EBI.DEVICE_STATE.get(boot[1], None))
+            print("END Reset---")
         return { 'status': EBI.STATUS.get(ans[0],ans[0]), 'boot_state': EBI.DEVICE_STATE.get(boot[1], None) }
     def firmware_version(self):
+        if self.debug:
+            print('Firmware Version')
         ans = self.send([0x06])
+        if self.debug:
+            print('      Firmware: ', self.hex(ans))
         return { 'firmware_version': self.hex(ans) }
     def output_power(self, power=None):
+        if self.debug:
+            print('Output Power')
         req_power = []
         try:
             req_power = [int(power) % 256]
@@ -162,17 +188,25 @@ class EBI:
         ans = self.send([0x10]+req_power)
         if req_power:
             return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
+        if self.debug:
+            print('      Output Power: ', self.hex(ans))
         return { 'power': ans[0] }
     def operating_channel(self, channel=None, spreading_factor=None, bandwidth=None, coding_rate=None):
+        if self.debug:
+            print("Operating channel")
         req_channel = []
         if channel in EBI.LORA_CHANNEL and spreading_factor in EBI.LORA_SPREADING_FACTOR and \
             bandwidth in EBI.LORA_BANDWIDTH and coding_rate in EBI.LORA_CODING_RATE:
             req_channel = [channel, spreading_factor, bandwidth, coding_rate]
         ans = self.send([0x11] + req_channel)
+        if self.debug:
+            print('      channel:', ans[0] )
         if req_channel:
             return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
         return { 'channel': ans[0] }
     def energy_save(self, policy=None):
+        if self.debug:
+            print("Energy save")
         req_policy = []
         if policy in EBI.MODULE_SLEEP_POLICY:
             req_policy = [policy]
@@ -211,6 +245,8 @@ class EBI:
         ans = self.send([0x30])
         return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
     def network_start(self):
+        if self.debug:
+            print("---Start Network")
         _timeout = self.ser.timeout
         self.ser.timeout = 3
         ans = self.send([0x31])

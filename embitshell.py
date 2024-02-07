@@ -7,27 +7,16 @@ class EmbitShell(cmd.Cmd):
 
     prompt = "EMB> "
 
-    def __init__(self, device, debug=True):
-        self.debug = debug
-        if self.debug:
-            print("---Start Init")
+    def __init__(self, device):
         self._e = EBI(device)
-        if self.debug:
-            print("---Start Reset")
         self._e.reset()
         state = self._e.state
         self.intro = "EMBIT module {embit_module} - FW {firmware_version}\n".format(**state)
         if state['state'] == 'Online':
             self._e.network_stop()
-        if self.debug:
-            print("---Energy save")
         self._e.energy_save(0x00) # Always on
         self._params = { 'channel': 1, 'sf': 7, 'bw': 0, 'cr': 1 } # 868.100 MHz, 128 Chips/symbol, 125 kHz, 4/5
-        if self.debug:
-            print("---Operating channel")
         self._e.operating_channel(*self._params.values())
-        if self.debug:
-            print("---Start Network")
         self._e.network_start()
         super().__init__()
 

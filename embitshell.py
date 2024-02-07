@@ -41,7 +41,7 @@ Usage: state"""
     def do_reset(self, arg):
         """reset device
 Usage: reset"""
-        ret = self._e.device_state()
+        ret = self._e.reset()
         print(ret)
 
     def do_power(self, arg):
@@ -190,6 +190,28 @@ dest: [0-65535]; specify no dest for broadcast"""
         ret = self._e.send_data(payload=payload, dst=dst)
         print(ret)
 
+    def do_report(self, arg):
+        """print all the setting parameter
+Usage: report"""
+        #self._e.debug = False
+        print("{'debug': %s}" % self._e.debug)  
+        print("==========================================")      
+        ret = self._e.device_report()
+        print("==========================================")  
+        #self._e.debug = True
+        print("{'debug': %s}" % self._e.debug)  
+    
+    def do_default(self, arg):
+        """print all the setting parameter
+Usage: default"""
+        #self._e.debug = False
+        print("{'debug': %s}" % self._e.debug)  
+        print("==========================================")      
+        ret = self._e.device_default()
+        print("==========================================")  
+        #self._e.debug = True
+        print("{'debug': %s}" % self._e.debug)  
+    
     def do_receive(self, arg):
         """receive a network packet and print it
 Usage: receive [timeout]

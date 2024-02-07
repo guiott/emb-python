@@ -304,6 +304,44 @@ class EBI:
             'dst': self.hex(ans[7:9]),
             'data': bytes(ans[9:]),
         }
+    def device_default(self):
+        self.debug == True
+        print("RESET:", self.reset())
+        print("DEVICE STATE", self.state)
+        if self.state['state'] == 'Online':
+            print("NETWORK STOP:", self.network_stop())
+        print("OUTPUT POWER:", self.output_power())
+        print("OUTPUT POWER -> +13dBm:", self.output_power(13))
+        print("OUTPUT POWER:", self.output_power())
+        print("OPERATING CHANNEL:", self.operating_channel())
+        print("OPERATING CHANNEL -> CH 1 (868.100 MHz), SF 7, BW 125 kHz, CR 4/5:", self.operating_channel(1,7,0,1))
+        print("OPERATING CHANNEL:", self.operating_channel())
+        print("ENERGY SAVE:", self.energy_save())
+        print("ENERGY SAVE -> ALWAYS ON: ", self.energy_save(0))
+        print("ENERGY SAVE:", self.energy_save())
+        print("NETWORK ADDRESS:", self.network_address())
+        print("NETWORK ADDRESS -> 00:01:", self.network_address([0,1]))
+        print("NETWORK ADDRESS:", self.network_address())
+        print("NETWORK IDENTIFIER:", self.network_identifier())
+        print("NETWORK IDENTIFIER -> 00:01:", self.network_identifier([0,1]))
+        print("NETWORK IDENTIFIER:", self.network_identifier())
+        print("NETWORK PREFERENCE:", self.network_preference())
+        print("NETWORK START:", self.network_start())
+        print("SEND DATA 01:02:03:04:", self.send_data(payload=[1,2,3,4]))
+        print("NETWORK STOP:", self.network_stop())
+        print("IEEE ADDRESS:", self.ieee_address())
+        return(True)
+    
+    def device_report(self):
+        print("DEVICE STATE", self.state)
+        print("OUTPUT POWER:", self.output_power())
+        print("OPERATING CHANNEL:", self.operating_channel())
+        print("ENERGY SAVE:", self.energy_save())
+        print("NETWORK ADDRESS:", self.network_address())
+        print("NETWORK IDENTIFIER:", self.network_identifier())
+        print("NETWORK PREFERENCE:", self.network_preference())
+        print("IEEE ADDRESS:", self.ieee_address())
+        return(True)
 
 if __name__ == "__main__":
     device = "/dev/ttyS6"
@@ -311,28 +349,5 @@ if __name__ == "__main__":
         device = sys.argv[1]
     except:
         pass
-    e = EBI(device, debug=True)
-    print("RESET:", e.reset())
-    print("DEVICE STATE", e.state)
-    if e.state['state'] == 'Online':
-        print("NETWORK STOP:", e.network_stop())
-    print("OUTPUT POWER:", e.output_power())
-    print("OUTPUT POWER -> +13dBm:", e.output_power(13))
-    print("OUTPUT POWER:", e.output_power())
-    print("OPERATING CHANNEL:", e.operating_channel())
-    print("OPERATING CHANNEL -> CH 1 (868.100 MHz), SF 7, BW 125 kHz, CR 4/5:", e.operating_channel(1,7,0,1))
-    print("OPERATING CHANNEL:", e.operating_channel())
-    print("ENERGY SAVE:", e.energy_save())
-    print("ENERGY SAVE -> ALWAYS ON: ", e.energy_save(0))
-    print("ENERGY SAVE:", e.energy_save())
-    print("NETWORK ADDRESS:", e.network_address())
-    print("NETWORK ADDRESS -> 00:01:", e.network_address([0,1]))
-    print("NETWORK ADDRESS:", e.network_address())
-    print("NETWORK IDENTIFIER:", e.network_identifier())
-    print("NETWORK IDENTIFIER -> 00:01:", e.network_identifier([0,1]))
-    print("NETWORK IDENTIFIER:", e.network_identifier())
-    print("NETWORK PREFERENCE:", e.network_preference())
-    print("NETWORK START:", e.network_start())
-    print("SEND DATA 01:02:03:04:", e.send_data(payload=[1,2,3,4]))
-    print("NETWORK STOP:", e.network_stop())
-    print("IEEE ADDRESS:", e.ieee_address())
+    e = EBI(device, debug=False)
+    e.device_default()

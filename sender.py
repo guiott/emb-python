@@ -25,4 +25,4 @@ if __name__ == "__main__":
     while True:
         print("SEND DATA %s:" % e.hex(payload), e.send_data(payload=payload))
         time.sleep(1)
-    print("NETWORK STOP:", e.network_stop())
+    print("NETWORK STOP :", e.network_stop())

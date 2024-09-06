@@ -1,6 +1,6 @@
 __pycache__
 .*.swp
-._.DS_Store
-.DS_Store
 .gitconfig
-._receiver.py
+._*
+config.py
+.DS_Store

@@ -3,6 +3,13 @@
 import cmd, sys, readline, shlex
 from ebi import EBI
 
+import config
+phyAddr = config.phyAddr
+netProtocol = config.netProtocol 
+autoJoin = config.autoJoin
+adr = config.adr
+appKey = config.appKey
+
 class EmbitShell(cmd.Cmd):
 
     prompt = "EMB> "
@@ -148,6 +155,21 @@ value: [0-65535]"""
             self._e.network_start()
         print(ret)
 
+    def do_region(self, arg):
+        """get or set device address
+Usage: region [value]
+
+value: [0-1-2]"""
+        value = None
+        state = self._e.device_state()
+        should_stop = value and state['state'] == 'Online'
+        if should_stop:
+            self._e.network_stop()
+        ret = self._e.region(value)
+        if should_stop:
+            self._e.network_start()
+        print(ret)
+
     def do_network(self, arg):
         """get or set device network identifier
 Usage: network [value]
@@ -170,9 +192,9 @@ value: [0-65535]"""
             self._e.network_start()
         print(ret)
 
-    def do_send(self, arg):
-        """send a network packet
-Usage: send payload [dest]
+    def do_send_EMB(self, arg):
+        """send a network packet using LoRaEMB protocol
+Usage: send_EMB payload [dest]
 
 dest: [0-65535]; specify no dest for broadcast"""
         if not arg:
@@ -188,6 +210,28 @@ dest: [0-65535]; specify no dest for broadcast"""
                 print("Invalid destination value {}".format(dst))
                 return
         ret = self._e.send_data(payload=payload, dst=dst)
+        print(ret)
+
+    def do_send(self, arg):
+        """send a network packet using LoRaWAN protocol
+Usage: send payload [dest]
+
+dest: [0-65535]; specify no dest for broadcast"""
+        if not arg:
+            print("Please specify a payload to send")
+            return
+        payload, dst = (shlex.split(arg)+[None])[:2]
+        payload = list(bytes(payload, 'utf8'))
+        print(payload)
+        print(dst)  
+        if dst != None:
+            try:
+                dst = int(dst)
+                dst = [ (dst & 0xFF00) >> 8, dst & 0x00FF ]
+            except ValueError:
+                print("Invalid destination value {}".format(dst))
+                return
+        ret = self._e.send_dataLW(payload=payload, dst=dst)
         print(ret)
 
     def do_report(self, arg):
@@ -227,7 +271,150 @@ timeout in seconds; specify no timeout to wait forever"""
         ret = self._e.receive(timeout)
         print(ret)
 
-    def do_quit(self, arg):
+    def do_abp(self, arg):
+        """set lorawan protocol parameters with ABP (NO auto join)
+Usage: set LoRaWAN manually
+
+value: [0-65535]"""
+        value = arg   
+        print("=============================================")
+        state = self._e.device_state()
+        if state['state'] == 'Online':
+            should_stop = True
+        else:
+            should_stop = False
+        if should_stop:
+            self._e.network_stop()
+        print("=============================================")
+        ret = self._e.network_preference(1,0,1)
+        print(ret)
+        print("---------------------------------------------")
+        ret = self._e.network_preference()
+        print(ret)
+        print("=============================================")
+        # Physical Address = AppEui + DevEui
+        ret = self._e.physical_address([0x70, 0xB3, 0xD5, 0x7E, 0xD0, 0x06, 0x9E, 0x89, 0x70, 0xB3, 0xD5, 0x7E, 0xD0, 0x06, 0x9E, 0x89])
+        print(ret)
+        print("------------------------------------------")
+        ret = self._e.physical_address()
+        print(ret)
+        print("=============================================")
+        #Network Address = DevAddr
+        ret = self._e.network_address([0x26, 0x0B, 0x6E, 0x5D])
+        print(ret)
+        print("---------------------------------------------")
+        ret = self._e.network_address()
+        print(ret)
+        print("=============================================")
+        ret = self._e.app_Skey([0xB6, 0x26, 0x73, 0x5F, 0x1C, 0x34, 0x27, 0x67, 0x65, 0x68, 0x5F, 0xB8, 0xA1, 0xD2, 0x1F, 0x47])
+        print(ret)
+        print("=============================================")
+        ret = self._e.nwk_Skey([0xFD, 0xC8, 0xC6, 0x7C, 0x1D, 0x0F, 0xFB, 0x56, 0x24, 0x1B, 0x6C, 0x88, 0x2E, 0xE3, 0x3A, 0xA7])
+        print(ret)        
+        print("=============================================")
+        #Energy save option 01 = Class A 
+        ret = self._e.energy_save()
+        print(ret)
+        print("=============================================")
+        #Power
+        ret = self._e.output_power(0x0E)
+        print(ret)
+        ret = self._e.output_power()
+        print(ret)
+        print("=============================================")
+        #Power
+        ret = self._e.operating_channel(1,9,0,1)
+        print(ret)
+        print("=============================================")
+        #Region
+        ret = self._e.region(0)
+        print(ret)
+        print("=============================================")
+        print(self._e.device_state())
+        self._e.network_start()
+        print(self._e.device_state())
+        print("---------------------------------------------")
+
+  
+        #if should_stop:
+            #self._e.network_start()
+
+    def do_lorawan(self, arg):
+        """set lorawan protocol parameters with auto join
+Usage: lorawan
+
+value: [0-65535]"""
+        value = arg   
+        state = self._e.device_state()
+        if state['state'] == 'Online':
+            should_stop = True
+        else:
+            should_stop = False
+        if should_stop:
+            self._e.network_stop()
+
+        ret = self._e.physical_address(phyAddr)
+        if self._e.debug:
+            print(ret)
+
+        ret = self._e.physical_address()
+        if self._e.debug:
+            print(ret)
+
+        ret = self._e.network_preference(netProtocol,autoJoin,adr)
+        if self._e.debug:
+            print(ret)
+
+        ret = self._e.network_preference()
+        if self._e.debug:
+         print(ret)
+
+        ret = self._e.app_key([0x2B,0x7E,0x15,0x16,0x28,0xAE,0xD2,0xA6,0xAB,0xF7,0x15,0x88,0x09,0xCF,0x4F,0x67])
+        if self._e.debug:
+            print(ret)
+
+        self._e.network_start()
+
+    def do_app_key(self, arg):
+        """set device AppKey
+Usage: AppKey [value]
+
+value: [16 byte]"""
+        value = None
+        if arg:
+            try:
+                value = int(arg)
+                value = [ (value & 0xFF00) >> 16, value & 0x00FF ]
+            except ValueError:
+                print("Invalid address value {}".format(arg))
+                return
+        state = self._e.device_state()
+        should_stop = value and state['state'] == 'Online'
+        if should_stop:
+            self._e.network_stop()
+        #ret = self._e.app_key(value)
+        ret = self._e.app_key(appKey)
+        print(ret)
+
+    def do_start(self, arg):
+        """network start
+Usage: start
+
+value: [0-65535]"""
+        self._e.network_start()
+        if self._e.debug:
+            print(self._e.device_state())
+
+    def do_stop(self, arg):
+        """network stop
+Usage: stop
+
+value: [0-65535]"""
+        self._e.network_stop()
+        if self._e.debug:
+            print(self._e.device_state())
+
+def do_quit(self, arg):
         """quit EMB shell
 Usage: quit"""
         print("Bye!")

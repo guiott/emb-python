@@ -133,8 +133,13 @@ class EBI:
             print('   cmd ->', self.hex(packet))
         self.ser.write(bytes(packet))
         ans = self.read()
-        assert(ans[0] == (command[0] | 0x80))
-        return ans[1:]
+        if ans != None:
+            #print('Payload: ', self.hex(ans))
+            assert(ans[0] == (command[0] | 0x80))
+            return ans[1:]
+        else:
+            print("---NO ANSWER---")
+            return
     def device_info(self):
         if self.debug:
             print('Device Info')
@@ -198,6 +203,7 @@ class EBI:
         if channel in EBI.LORA_CHANNEL and spreading_factor in EBI.LORA_SPREADING_FACTOR and \
             bandwidth in EBI.LORA_BANDWIDTH and coding_rate in EBI.LORA_CODING_RATE:
             req_channel = [channel, spreading_factor, bandwidth, coding_rate]
+            print(req_channel)
         ans = self.send([0x11] + req_channel)
         if self.debug:
             print('      channel:', ans[0] )
@@ -214,7 +220,18 @@ class EBI:
         if req_policy:
             return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
         return { 'policy': EBI.MODULE_SLEEP_POLICY.get(ans[0], ans[0]) }
+    def region(self, region=None):
+        if self.debug:
+            print("Region")
+        req_region = []
+        if region:
+            req_region = [region]
+        ans = self.send([0x19] + req_region)
+        if region:
+            return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
     def network_address(self, address=None):
+        if self.debug:
+            print('Network Address = DevAddr')
         req_address = []
         if address and len(address) in [2,4]:
             req_address = address
@@ -223,6 +240,8 @@ class EBI:
             return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
         return { 'address': self.hex(ans) }
     def network_identifier(self, identifier=None):
+        if self.debug:
+            print('Network Identifier')
         req_identifier = []
         if identifier and len(identifier) in [2,4]:
             req_identifier = identifier
@@ -231,6 +250,8 @@ class EBI:
             return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
         return { 'identifier': self.hex(ans) }
     def network_preference(self, protocol=None, auto_join=None, adr=None):
+        if self.debug:
+            print('Network Preferences')
         req_preference = []
         if protocol in [0,1] and auto_join in [0,1] and adr in [0,1]:
             req_preference = [(protocol << 7) + (auto_join << 6) + (adr << 5)]
@@ -242,16 +263,23 @@ class EBI:
         adr = (ans[0] & 0x20) != 0
         return { 'protocol': protocol, 'auto_join': auto_join, 'adr': adr }
     def network_stop(self):
+        if self.debug:
+            print("---Stop Network")
+        _timeout = self.ser.timeout
+        self.ser.timeout = 10
         ans = self.send([0x30])
+        self.ser.timeout = _timeout
         return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
+    
     def network_start(self):
         if self.debug:
             print("---Start Network")
         _timeout = self.ser.timeout
-        self.ser.timeout = 3
+        self.ser.timeout = 10
         ans = self.send([0x31])
         self.ser.timeout = _timeout
         return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
+    
     def send_data(self, payload, protocol=0, dst=None, port=1):
         assert(protocol in [0,1])
         if dst == None:
@@ -276,7 +304,41 @@ class EBI:
             result['tx_power'] = ans[7]
             result['waiting_time'] = ans[8:12]
         return result
+    def send_dataLW(self, payload, protocol=1, dst=None, port=6):
+        assert(protocol in [0,1])
+        if dst == None: 
+            dst = [0xff, 0xff]
+        if protocol == 0: # LoRaEMB
+            assert(len(dst)==2)
+            options = [0x00, 0x00]
+            header = options + dst
+        else: # LoRaWAN
+            assert(port in range(1,224))
+            options = [0x0D, 0x00]
+            header = options + [port]
+
+        _timeout = self.ser.timeout
+        self.ser.timeout = 10
+        ans = self.send([0x50] + header + payload)
+        self.ser.timeout = _timeout
+
+        result = {
+            'status':          EBI.STATUS.get(ans[0],ans[0]),
+            'retries':         ans[1],
+            'RSSI':            (ans[2] << 8) + ans[3],
+        }
+        if result['status'] == 'Success':
+            if len(ans) >= 6:
+                result['tx_channel_mask'] = (ans[4] << 8) + ans[5]
+            if len(ans) >= 7:
+                result['tx_channel_mask'] = ans[4:5]
+                result['tx_datarate_mask'] = ans[6]
+                result['tx_power'] = ans[7]
+                result['waiting_time'] = ans[8:12]
+        return result
     def ieee_address(self, mac=None):
+        if self.debug:
+            print('IEEE ADDRESS')
         req_mac = []
         if mac:
             assert(len(mac) == 8)
@@ -285,6 +347,22 @@ class EBI:
         if req_mac:
             return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
         return { 'ieee_address': self.hex(ans) }
+    def physical_address(self, physical=None):
+        if self.debug:
+            print('Physical Address')
+        req_physical = []
+        if physical:
+            assert(len(physical) == 16)
+            req_physical = physical
+        ans = self.send([0x20] + req_physical)
+        if req_physical:
+            return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
+        ans1=ans[:8]
+        ans2=ans[8:]
+        if self.debug:
+            print("AppEUI",self.hex(ans1))
+            print("DevEUI",self.hex(ans2))
+        return { 'physical_address = AppEui + DevEui': self.hex(ans) }
     def receive(self, timeout=None):
         _timeout = self.ser.timeout
         self.ser.timeout = timeout
@@ -333,15 +411,59 @@ class EBI:
         return(True)
     
     def device_report(self):
+        print("---------------------------------------------")
         print("DEVICE STATE", self.state)
+        print("---------------------------------------------")
         print("OUTPUT POWER:", self.output_power())
+        print("---------------------------------------------")
         print("OPERATING CHANNEL:", self.operating_channel())
+        print("---------------------------------------------")
         print("ENERGY SAVE:", self.energy_save())
+        print("---------------------------------------------")
         print("NETWORK ADDRESS:", self.network_address())
+        print("---------------------------------------------")
         print("NETWORK IDENTIFIER:", self.network_identifier())
+        print("---------------------------------------------")
         print("NETWORK PREFERENCE:", self.network_preference())
+        print("---------------------------------------------")
         print("IEEE ADDRESS:", self.ieee_address())
+        print("---------------------------------------------")
+        print("PHYSICAL ADDRESS:", self.physical_address())
+        print("---------------------------------------------")
+        print("AppKey:", self.app_key([0x2B,0x7E,0x15,0x16,0x28,0xAE,0xD2,0xA6,0xAB,0xF7,0x15,0x88,0x09,0xCF,0x4F,0x67]))
+        print("---------------------------------------------")
         return(True)
+    def app_key(self, key=None):
+        if self.debug:
+            print('AppKey')
+        req_key = []
+        if key and len(key) in [16]:
+            req_key = key
+        ans = self.send([0x26, 0x01] + req_key)
+        if self.debug:
+            print('AppKey:', self.hex(req_key))
+        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
+    
+    def app_Skey(self, key=None):
+        if self.debug:
+            print('AppSKey')
+        req_key = []
+        if key and len(key) in [16]:
+            req_key = key
+        ans = self.send([0x26, 0x11] + req_key)
+        print('AppSKey:', self.hex(req_key))
+        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
+    
+    def nwk_Skey(self, key=None):
+        if self.debug:
+            print('NwkSKey')
+        req_key = []
+        if key and len(key) in [16]:
+            req_key = key
+        ans = self.send([0x26, 0x10] + req_key)
+        print('NwkSKey:', self.hex(req_key))
+        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
+    
 
 if __name__ == "__main__":
     device = "/dev/ttyS6"

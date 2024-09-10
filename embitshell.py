@@ -3,6 +3,7 @@
 import cmd, sys, readline, shlex
 from ebi import EBI
 
+#rename config.py_TEMPLATE config.py and edit your keys
 import config
 phyAddr = config.phyAddr
 netProtocol = config.netProtocol 

@@ -1,3 +1,4 @@
+Visual Studio Code
 Menu -> Terminal -> New Terminal
 ssh acme@acqua.local
 cd /srv/samba/emb-python/

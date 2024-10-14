@@ -1,0 +1,7 @@
+Menu -> Terminal -> New Terminal
+ssh acme@acqua.local
+cd /srv/samba/emb-python/
+python3 embitshell.py
+help for alla commands list
+lorawan to join network
+send to send packet

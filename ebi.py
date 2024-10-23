@@ -114,6 +114,10 @@ class EBI:
         return sum(packet) & 0xFF
     def hex(self, arr):
         return ':'.join(map(lambda x: '%02x' % x, arr))
+    def signed(self, num, bits):
+        if num & (1 <<(bits -1)):
+            return num - (1 << bits)
+        return num
     def read(self):
         ans = list(self.ser.read(2))
         if len(ans) != 2:
@@ -270,7 +274,6 @@ class EBI:
         ans = self.send([0x30])
         self.ser.timeout = _timeout
         return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
-    
     def network_start(self):
         if self.debug:
             print("---Start Network")
@@ -278,8 +281,7 @@ class EBI:
         self.ser.timeout = 10
         ans = self.send([0x31])
         self.ser.timeout = _timeout
-        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
-    
+        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }   
     def send_data(self, payload, protocol=0, dst=None, port=1):
         assert(protocol in [0,1])
         if dst == None:
@@ -325,7 +327,8 @@ class EBI:
         result = {
             'status':          EBI.STATUS.get(ans[0],ans[0]),
             'retries':         ans[1],
-            'RSSI':            (ans[2] << 8) + ans[3],
+            #'RSSI':            (ans[2] << 8) + ans[3],
+            'RSSI':            self.signed(((ans[2] << 8) + ans[3]), 16),
         }
         if result['status'] == 'Success':
             if len(ans) >= 6:
@@ -363,7 +366,7 @@ class EBI:
             print("AppEUI",self.hex(ans1))
             print("DevEUI",self.hex(ans2))
         return { 'physical_address = AppEui + DevEui': self.hex(ans) }
-    def receive(self, timeout=None):
+    def receive(self, protocol=0, timeout=None):
         _timeout = self.ser.timeout
         self.ser.timeout = timeout
         ans = self.read()
@@ -371,17 +374,24 @@ class EBI:
         if not ans:
             return
         assert(ans[0] == 0xe0)
-        def signed(num, bits):
-            if num & (1 <<(bits -1)):
-                return num - (1 << bits)
-            return num
-        return {
-            'options': self.hex(ans[1:3]),
-            'rssi': signed((ans[4] << 8) + ans[3], 16),
-            'src': self.hex(ans[5:7]),
-            'dst': self.hex(ans[7:9]),
-            'data': bytes(ans[9:]),
-        }
+        if protocol==1:
+            #LoRaEMB
+            return {
+                'options': self.hex(ans[1:3]),
+                'rssi': self.signed((ans[4] << 8) + ans[3], 16),
+                'src': self.hex(ans[5:7]),
+                'dst': self.hex(ans[7:9]),
+                'data': bytes(ans[9:]),
+            }
+        else:
+            #LoRaWAN
+            return {
+                #'options': self.hex(ans[1:3]),
+                'RSSI': self.signed((ans[3] << 8) + ans[4], 16),
+                'FPort': (ans[6]),
+                #'data': bytes(ans[7:]),
+                'data': ans[7:],
+            }     
     def device_default(self):
         self.debug == True
         print("RESET:", self.reset())
@@ -408,11 +418,12 @@ class EBI:
         print("SEND DATA 01:02:03:04:", self.send_data(payload=[1,2,3,4]))
         print("NETWORK STOP:", self.network_stop())
         print("IEEE ADDRESS:", self.ieee_address())
-        return(True)
-    
+        return(True)   
     def device_report(self):
         print("---------------------------------------------")
         print("DEVICE STATE", self.state)
+        print("---------------------------------------------")
+        print("REGION", self.region())
         print("---------------------------------------------")
         print("OUTPUT POWER:", self.output_power())
         print("---------------------------------------------")
@@ -442,8 +453,7 @@ class EBI:
         ans = self.send([0x26, 0x01] + req_key)
         if self.debug:
             print('AppKey:', self.hex(req_key))
-        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
-    
+        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }  
     def app_Skey(self, key=None):
         if self.debug:
             print('AppSKey')
@@ -452,8 +462,7 @@ class EBI:
             req_key = key
         ans = self.send([0x26, 0x11] + req_key)
         print('AppSKey:', self.hex(req_key))
-        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
-    
+        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }  
     def nwk_Skey(self, key=None):
         if self.debug:
             print('NwkSKey')
@@ -462,8 +471,7 @@ class EBI:
             req_key = key
         ans = self.send([0x26, 0x10] + req_key)
         print('NwkSKey:', self.hex(req_key))
-        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
-    
+        return { 'status': EBI.STATUS.get(ans[0],ans[0]) }  
 
 if __name__ == "__main__":
     device = "/dev/ttyS6"

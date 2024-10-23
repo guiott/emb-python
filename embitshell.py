@@ -3,6 +3,88 @@
 import cmd, sys, readline, shlex
 from ebi import EBI
 
+import time
+
+#GPIO definitions=======
+import gpiod
+chipA=gpiod.Chip('gpiochip0')
+chipB=gpiod.Chip('gpiochip1')
+chipC=gpiod.Chip('gpiochip2')
+chipD=gpiod.Chip('gpiochip3')
+chipE=gpiod.Chip('gpiochip4')
+
+def GPIO_conf(pin_name, chip_name, consumer_name, direction, default_val=0):
+    line = gpiod.find_line(pin_name)
+    if line is None:
+        raise Exception(f"GPIO {pin_name} not found")
+    GPIO_line = chip_name.get_lines([line.offset()])
+    if direction == "out":
+        GPIO_line.request(consumer=consumer_name, type=gpiod.LINE_REQ_DIR_OUT, default_vals=[default_val])
+    elif direction == "in":
+        GPIO_line.request(consumer=consumer_name, type=gpiod.LINE_REQ_DIR_IN)
+    else:
+        raise ValueError("set direction to 'in' or 'out'")
+    return GPIO_line
+
+Rel1 = GPIO_conf("pioA13", chipA, "Rel1", "out", 1)
+Rel2 = GPIO_conf("pioA14", chipA, "Rel2", "out", 1)
+led_green = GPIO_conf("pioD26", chipD, "led_green", "out", 1)
+led_red = GPIO_conf("pioD14", chipD, "led_red", "out", 1)
+rgb_red = GPIO_conf("pioD19", chipD, "RGB_red", "out", 1)
+rgb_green = GPIO_conf("pioD31", chipD, "RGB_green", "out", 1)
+rgb_blue = GPIO_conf("pioD30", chipD, "RGB_blue", "out", 1)
+DIG_OUT1 = GPIO_conf("pioC13", chipC, "DIG_OUT1", "out", 1)
+DIG_OUT2 = GPIO_conf("pioC12", chipC, "DIG_OUT2", "out", 1)
+DIG_IN1 = GPIO_conf("pioA15", chipA, "DIG_IN1", "in")
+DIG_IN2 = GPIO_conf("pioC14", chipC, "DIG_IN2", "in")
+
+def Rel(RelN, RelState='OFF'):
+    if(RelState == 'ON'):
+        State=1
+    else:
+        State=0
+
+    if(RelN==1):
+        Rel1.set_values([State])
+    elif(RelN==2):
+        Rel2.set_values([State])
+    else:
+        Rel1.set_values([0])
+        Rel2.set_values([0])
+
+def led(LED, LedState='OFF'):
+    if(LedState == 'ON'):
+        State=0
+    else:
+        State=1
+
+    if(LED=='g'):
+        led_green.set_values([State])
+    elif(LED=='r'):
+        led_red.set_values([State])
+    elif(LED=='rgb_r'):
+        rgb_red.set_values([State])
+    elif(LED=='rgb_g'):
+        rgb_green.set_values([State])
+    elif(LED=='rgb_b'):
+        rgb_blue.set_values([State])
+    else:
+        led_green.set_values([1])
+        led_green.set_values([1])
+        rgb_red.set_values([1])
+        rgb_green.set_values([1])
+        rgb_blue.set_values([1])
+
+def AllOFF():
+    Rel(1, 'OFF')
+    led('g', 'OFF')
+    Rel(2, 'OFF')
+    led('r', 'OFF')
+    led('rgb_r','OFF')
+    led('rgb_g','OFF')
+    led('rgb_b','OFF')
+#=======GPIO definitions
+
 #rename config.py_TEMPLATE config.py and edit your keys accordingly
 import config
 phyAddr = config.phyAddr
@@ -30,7 +112,8 @@ class EmbitShell(cmd.Cmd):
 
     def default(self, line):
         if line == "EOF":
-            print("Bye!")
+            print("\nBye!")
+            AllOFF()
             return True
         return super().default(line)
 
@@ -257,19 +340,23 @@ Usage: default"""
         #self._e.debug = True
         print("{'debug': %s}" % self._e.debug)  
     
-    def do_receive(self, arg):
+    def do_receive(self, arg1=None , arg2=None):
         """receive a network packet and print it
-Usage: receive [timeout]
+Usage: receive protocol 0 = LoRaWAN - 1 = EMB, [timeout]
 
 timeout in seconds; specify no timeout to wait forever"""
-        timeout = None
-        if arg:
+        timeout = 15
+        if arg2:
             try:
-                timeout = int(arg)
+                timeout = int(arg2)
             except ValueError:
-                print("Invalid timeout {}".format(arg))
+                print("Invalid timeout {}".format(arg2))
                 return
-        ret = self._e.receive(timeout)
+        
+        if arg1:
+            ret = self._e.receive(arg1, timeout)
+        else:
+            ret = self._e.receive(0, timeout)
         print(ret)
 
     def do_abp(self, arg):
@@ -341,11 +428,16 @@ value: [0-65535]"""
             #self._e.network_start()
 
     def do_lorawan(self, arg):
-        """set lorawan protocol parameters with auto join
-Usage: lorawan
+        """set lorawan protocol parameters with auto join. Class = arg
+Usage: lorawan 0, 1, 2
 
-value: [0-65535]"""
-        value = arg   
+value: [0-1-2]"""
+        value = 0
+        if arg:
+            value = int(arg)
+            if value > 2:
+                print("Invalid Class {}".format(arg))
+                return  
         state = self._e.device_state()
         if state['state'] == 'Online':
             should_stop = True
@@ -357,7 +449,6 @@ value: [0-65535]"""
         ret = self._e.physical_address(phyAddr)
         if self._e.debug:
             print(ret)
-
         ret = self._e.physical_address()
         if self._e.debug:
             print(ret)
@@ -365,14 +456,20 @@ value: [0-65535]"""
         ret = self._e.network_preference(netProtocol,autoJoin,adr)
         if self._e.debug:
             print(ret)
-
         ret = self._e.network_preference()
         if self._e.debug:
-         print(ret)
+            print(ret)
 
         ret = self._e.app_key(appKey)
         if self._e.debug:
             print(ret)
+
+        #Energy save option 00 = Class C - 01 = Class A - 02 = TX Only
+        ret = self._e.energy_save(value)
+        if self._e.debug:
+            print(ret)
+        if self._e.debug:
+            print(self._e.energy_save())  
 
         self._e.network_start()
 
@@ -418,7 +515,8 @@ value: [0-65535]"""
 def do_quit(self, arg):
         """quit EMB shell
 Usage: quit"""
-        print("Bye!")
+        print("\nBye!")
+        AllOFF()
         return True
 
 if __name__ == '__main__':
@@ -431,5 +529,7 @@ if __name__ == '__main__':
     try:
         shell.cmdloop()
     except KeyboardInterrupt:
-        print("Bye!")
+        print("\nBye!")
+        AllOFF()
+
 

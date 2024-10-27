@@ -372,7 +372,8 @@ class EBI:
         ans = self.read()
         self.ser.timeout = _timeout
         if not ans:
-            return
+            return None, None, None, None
+        
         assert(ans[0] == 0xe0)
         if protocol==1:
             #LoRaEMB
@@ -381,17 +382,24 @@ class EBI:
                 'rssi': self.signed((ans[4] << 8) + ans[3], 16),
                 'src': self.hex(ans[5:7]),
                 'dst': self.hex(ans[7:9]),
-                'data': bytes(ans[9:]),
+                'data': chr(ans[9:]),
             }
         else:
             #LoRaWAN
-            return {
-                #'options': self.hex(ans[1:3]),
-                'RSSI': self.signed((ans[3] << 8) + ans[4], 16),
-                'FPort': (ans[6]),
-                #'data': bytes(ans[7:]),
-                'data': ans[7:],
-            }     
+            options = self.hex(ans[1:3])
+            RSSI = self.signed((ans[3] << 8) + ans[4], 16)
+            FPort = (ans[6])
+            data=""
+            RXstr = (ans[7:])
+            data = ''.join(map(chr, RXstr)) 
+
+            return options, RSSI, FPort, data
+                # #'options': self.hex(ans[1:3]),
+                # 'RSSI': self.signed((ans[3] << 8) + ans[4], 16),
+                # 'FPort': (ans[6]),
+                # #'data': bytes(ans[7:]),
+                # 'data': ans[7:],
+
     def device_default(self):
         self.debug == True
         print("RESET:", self.reset())

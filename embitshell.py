@@ -26,15 +26,16 @@ def GPIO_conf(pin_name, chip_name, consumer_name, direction, default_val=0):
         raise ValueError("set direction to 'in' or 'out'")
     return GPIO_line
 
-Rel1 = GPIO_conf("pioA13", chipA, "Rel1", "out", 1)
-Rel2 = GPIO_conf("pioA14", chipA, "Rel2", "out", 1)
+Rel1 = GPIO_conf("pioA13", chipA, "Rel1", "out", 0)
+Rel2 = GPIO_conf("pioA14", chipA, "Rel2", "out", 0)
 led_green = GPIO_conf("pioD26", chipD, "led_green", "out", 1)
 led_red = GPIO_conf("pioD14", chipD, "led_red", "out", 1)
 rgb_red = GPIO_conf("pioD19", chipD, "RGB_red", "out", 1)
 rgb_green = GPIO_conf("pioD31", chipD, "RGB_green", "out", 1)
 rgb_blue = GPIO_conf("pioD30", chipD, "RGB_blue", "out", 1)
-DIG_OUT1 = GPIO_conf("pioC13", chipC, "DIG_OUT1", "out", 1)
-DIG_OUT2 = GPIO_conf("pioC12", chipC, "DIG_OUT2", "out", 1)
+DIG_OUT1 = GPIO_conf("pioC13", chipC, "DIG_OUT1", "out", 0)
+DIG_OUT2 = GPIO_conf("pioC12", chipC, "DIG_OUT2", "out", 0)
+PCIe_ON = GPIO_conf("pioC20", chipC, "PCIe_ON", "out", 0)
 DIG_IN1 = GPIO_conf("pioA15", chipA, "DIG_IN1", "in")
 DIG_IN2 = GPIO_conf("pioC14", chipC, "DIG_IN2", "in")
 
@@ -44,15 +45,16 @@ def Rel(RelN, RelState='OFF'):
     else:
         State=0
 
-    if(RelN==1):
+    if(RelN=='1'):
         Rel1.set_values([State])
-    elif(RelN==2):
+    elif(RelN=='2'):
         Rel2.set_values([State])
     else:
         Rel1.set_values([0])
         Rel2.set_values([0])
 
-def led(LED, LedState='OFF'):
+leds = ['r','g','R','G','B']
+def Led(LED, LedState='OFF'):
     if(LedState == 'ON'):
         State=0
     else:
@@ -62,11 +64,11 @@ def led(LED, LedState='OFF'):
         led_green.set_values([State])
     elif(LED=='r'):
         led_red.set_values([State])
-    elif(LED=='rgb_r'):
+    elif(LED=='R'):
         rgb_red.set_values([State])
-    elif(LED=='rgb_g'):
+    elif(LED=='G'):
         rgb_green.set_values([State])
-    elif(LED=='rgb_b'):
+    elif(LED=='B'):
         rgb_blue.set_values([State])
     else:
         led_green.set_values([1])
@@ -75,14 +77,72 @@ def led(LED, LedState='OFF'):
         rgb_green.set_values([1])
         rgb_blue.set_values([1])
 
+digs = ['P', '1', '2']
+def Dig(digN, digStatus):
+    if(digStatus == 'ON'):
+        State=1
+    else:
+        State=0    
+    if(digN=='P'):
+        PCIe_ON.set_values([State])
+    elif(digN=='1'):
+        DIG_OUT1.set_values([State])
+    elif(digN=='2'):
+        DIG_OUT2.set_values([State])
+    else:
+        PCIe_ON.set_values([0])
+        DIG_OUT1.set_values([0])
+        DIG_OUT2.set_values([0])
+
 def AllOFF():
     Rel(1, 'OFF')
-    led('g', 'OFF')
-    Rel(2, 'OFF')
-    led('r', 'OFF')
-    led('rgb_r','OFF')
-    led('rgb_g','OFF')
-    led('rgb_b','OFF')
+    Led('g', 'OFF')
+    Rel(2, 'OFF') 
+    Led('r', 'OFF')
+    Led('rgb_r','OFF')
+    Led('rgb_g','OFF')
+    Led('rgb_b','OFF')
+    PCIe_ON.set_values([0])
+    DIG_OUT1.set_values([0])
+    DIG_OUT2.set_values([0])
+
+def deviceSet(self, devType, devNum, devStatus):  
+    #print(devType, devNum, devStatus)
+    if devType == 'R':
+        if devNum in ['1', '2']:
+            if devStatus in ['ON', 'OFF']:
+                Rel(devNum, devStatus)
+            else:
+                if self._e.debug:
+                    print("Dev Status not recognized")
+        else:
+            if self._e.debug:
+                print("Dev Num not recognized") 
+    elif devType == 'L':
+        if devNum in leds:
+            if devStatus in ['ON', 'OFF']:
+                Led(devNum, devStatus)
+            else:
+                if self._e.debug:
+                    print("Dev Status not recognized")
+        else:
+            if self._e.debug:
+                print("Dev Num not recognized") 
+    elif devType == 'D':
+        if devNum in digs:
+            if devStatus in ['ON', 'OFF']:
+                Dig(devNum, devStatus)
+            else:
+                if self._e.debug:
+                    print("Dev Status not recognized")
+        else:
+            if self._e.debug:
+                print("Dev Num not recognized") 
+    elif devType == 'A':
+        AllOFF()
+    else:
+        if self._e.debug:
+            print("Dev Type not recognized")  
 #=======GPIO definitions
 
 #rename config.py_TEMPLATE config.py and edit your keys accordingly
@@ -92,6 +152,7 @@ netProtocol = config.netProtocol
 autoJoin = config.autoJoin
 adr = config.adr
 appKey = config.appKey
+RXtimeout = config.RXtimeout
 
 class EmbitShell(cmd.Cmd):
 
@@ -112,7 +173,8 @@ class EmbitShell(cmd.Cmd):
 
     def default(self, line):
         if line == "EOF":
-            print("\nBye!")
+            if self._e.debug:
+                print("\nBye!")
             AllOFF()
             return True
         return super().default(line)
@@ -121,19 +183,22 @@ class EmbitShell(cmd.Cmd):
         """toggle debug mode
 Usage: debug"""
         self._e.debug = not self._e.debug
-        print("{'debug': %s}" % self._e.debug)
+        if self._e.debug:
+            print("{'debug': %s}" % self._e.debug)
 
     def do_state(self, arg):
         """get device state
 Usage: state"""
         ret = self._e.device_state()
-        print(ret)
+        if self._e.debug:
+            print(ret)
 
     def do_reset(self, arg):
         """reset device
 Usage: reset"""
         ret = self._e.reset()
-        print(ret)
+        if self._e.debug:
+            print(ret)
 
     def do_power(self, arg):
         """get or set device power
@@ -145,7 +210,8 @@ value: [0-256]"""
             try:
                 value = int(arg) % 256
             except ValueError:
-                print("Invalid power value {}".format(arg))
+                if self._e.debug:
+                    print("Invalid power value {}".format(arg))
                 return
         state = self._e.device_state()
         should_stop = value and state['state'] == 'Online'
@@ -154,7 +220,8 @@ value: [0-256]"""
         ret = self._e.output_power(value)
         if should_stop:
             self._e.network_start()
-        print(ret)
+        if self._e.debug:
+            print(ret)
 
     def do_channel(self, arg):
         """get or set device channel parameters
@@ -215,7 +282,8 @@ cr: 0x01 -> 4/5
         ret.update(self._params)
         if should_stop:
             self._e.network_start()
-        print(ret)
+        if self._e.debug:
+            print(ret)
 
     def do_address(self, arg):
         """get or set device address
@@ -237,7 +305,8 @@ value: [0-65535]"""
         ret = self._e.network_address(value)
         if should_stop:
             self._e.network_start()
-        print(ret)
+        if self._e.debug:
+            print(ret)
 
     def do_region(self, arg):
         """get or set device address
@@ -252,7 +321,8 @@ value: [0-1-2]"""
         ret = self._e.region(value)
         if should_stop:
             self._e.network_start()
-        print(ret)
+        if self._e.debug:
+            print(ret)
 
     def do_network(self, arg):
         """get or set device network identifier
@@ -274,7 +344,8 @@ value: [0-65535]"""
         ret = self._e.network_identifier(value)
         if should_stop:
             self._e.network_start()
-        print(ret)
+        if self._e.debug:
+            print(ret)
 
     def do_send_EMB(self, arg):
         """send a network packet using LoRaEMB protocol
@@ -294,7 +365,8 @@ dest: [0-65535]; specify no dest for broadcast"""
                 print("Invalid destination value {}".format(dst))
                 return
         ret = self._e.send_data(payload=payload, dst=dst)
-        print(ret)
+        if self._e.debug:
+            print(ret)
 
     def do_send(self, arg):
         """send a network packet using LoRaWAN protocol
@@ -306,8 +378,9 @@ dest: [0-65535]; specify no dest for broadcast"""
             return
         payload, dst = (shlex.split(arg)+[None])[:2]
         payload = list(bytes(payload, 'utf8'))
-        print(payload)
-        print(dst)  
+        if self._e.debug:
+            print(payload)
+            print(dst)  
         if dst != None:
             try:
                 dst = int(dst)
@@ -316,7 +389,8 @@ dest: [0-65535]; specify no dest for broadcast"""
                 print("Invalid destination value {}".format(dst))
                 return
         ret = self._e.send_dataLW(payload=payload, dst=dst)
-        print(ret)
+        if self._e.debug:
+            print(ret)
 
     def do_report(self, arg):
         """print all the setting parameter
@@ -340,24 +414,20 @@ Usage: default"""
         #self._e.debug = True
         print("{'debug': %s}" % self._e.debug)  
     
-    def do_receive(self, arg1=None , arg2=None):
+    def do_receive(self, arg1=None):
         """receive a network packet and print it
-Usage: receive protocol 0 = LoRaWAN - 1 = EMB, [timeout]
+Usage: receive protocol 0 = LoRaWAN - 1 = EMB
 
 timeout in seconds; specify no timeout to wait forever"""
-        timeout = 15
-        if arg2:
-            try:
-                timeout = int(arg2)
-            except ValueError:
-                print("Invalid timeout {}".format(arg2))
-                return
-        
         if arg1:
-            ret = self._e.receive(arg1, timeout)
+            options, RSSI, FPort, data = self._e.receive(arg1, RXtimeout)
         else:
-            ret = self._e.receive(0, timeout)
-        print(ret)
+            options, RSSI, FPort, data = self._e.receive(0, RXtimeout)
+        if self._e.debug:
+            print("Opt: ", options, " - RSSI:" , RSSI, " - FPort: ", FPort, " - Data: ", data)
+        if RSSI:
+            dataSplit=data.split(":")
+            deviceSet(self, dataSplit[0], dataSplit[1], dataSplit[2])
 
     def do_abp(self, arg):
         """set lorawan protocol parameters with ABP (NO auto join)
@@ -365,7 +435,8 @@ Usage: set LoRaWAN manually
 
 value: [0-65535]"""
         value = arg   
-        print("=============================================")
+        if self._e.debug:
+            print("=============================================")
         state = self._e.device_state()
         if state['state'] == 'Online':
             should_stop = True
@@ -373,57 +444,71 @@ value: [0-65535]"""
             should_stop = False
         if should_stop:
             self._e.network_stop()
-        print("=============================================")
+        if self._e.debug:
+            print("=============================================")
         ret = self._e.network_preference(1,0,1)
-        print(ret)
-        print("---------------------------------------------")
+        if self._e.debug:
+            print(ret)
+            print("---------------------------------------------")
         ret = self._e.network_preference()
-        print(ret)
-        print("=============================================")
+        if self._e.debug:
+            print(ret)
+            print("=============================================")
         # Physical Address = AppEui + DevEui
         ret = self._e.physical_address([0x70, 0xB3, 0xD5, 0x7E, 0xD0, 0x06, 0x9E, 0x89, 0x70, 0xB3, 0xD5, 0x7E, 0xD0, 0x06, 0x9E, 0x89])
-        print(ret)
-        print("------------------------------------------")
+        if self._e.debug:
+            print(ret)
+            print("------------------------------------------")
         ret = self._e.physical_address()
-        print(ret)
-        print("=============================================")
+        if self._e.debug:   
+            print(ret)
+            print("=============================================")
         #Network Address = DevAddr
         ret = self._e.network_address([0x26, 0x0B, 0x6E, 0x5D])
-        print(ret)
-        print("---------------------------------------------")
+        if self._e.debug:
+            print(ret)
+            print("---------------------------------------------")
         ret = self._e.network_address()
-        print(ret)
-        print("=============================================")
+        if self._e.debug:
+            print(ret)
+            print("=============================================")
         ret = self._e.app_Skey([0xB6, 0x26, 0x73, 0x5F, 0x1C, 0x34, 0x27, 0x67, 0x65, 0x68, 0x5F, 0xB8, 0xA1, 0xD2, 0x1F, 0x47])
-        print(ret)
-        print("=============================================")
+        if self._e.debug:
+            print(ret)
+            print("=============================================")
         ret = self._e.nwk_Skey([0xFD, 0xC8, 0xC6, 0x7C, 0x1D, 0x0F, 0xFB, 0x56, 0x24, 0x1B, 0x6C, 0x88, 0x2E, 0xE3, 0x3A, 0xA7])
-        print(ret)        
-        print("=============================================")
+        if self._e.debug:
+            print(ret)        
+            print("=============================================")
         #Energy save option 01 = Class A 
         ret = self._e.energy_save()
-        print(ret)
-        print("=============================================")
+        if self._e.debug:
+            print(ret)
+            print("=============================================")
         #Power
         ret = self._e.output_power(0x0E)
-        print(ret)
+        if self._e.debug:
+            print(ret)
         ret = self._e.output_power()
-        print(ret)
-        print("=============================================")
+        if self._e.debug:
+            print(ret)
+            print("=============================================")
         #Power
         ret = self._e.operating_channel(1,9,0,1)
-        print(ret)
-        print("=============================================")
+        if self._e.debug:
+            print(ret)
+            print("=============================================")
         #Region
         ret = self._e.region(0)
-        print(ret)
-        print("=============================================")
-        print(self._e.device_state())
+        if self._e.debug:
+            print(ret)
+            print("=============================================")
+            print(self._e.device_state())
         self._e.network_start()
-        print(self._e.device_state())
-        print("---------------------------------------------")
+        if self._e.debug:
+            print(self._e.device_state())
+            print("---------------------------------------------")
 
-  
         #if should_stop:
             #self._e.network_start()
 
@@ -436,7 +521,8 @@ value: [0-1-2]"""
         if arg:
             value = int(arg)
             if value > 2:
-                print("Invalid Class {}".format(arg))
+                if self._e.debug:
+                    print("Invalid Class {}".format(arg))
                 return  
         state = self._e.device_state()
         if state['state'] == 'Online':
@@ -492,7 +578,8 @@ value: [16 byte]"""
             self._e.network_stop()
         #ret = self._e.app_key(value)
         ret = self._e.app_key(appKey)
-        print(ret)
+        if self._e.debug:
+            print(ret)
 
     def do_start(self, arg):
         """network start
@@ -515,7 +602,8 @@ value: [0-65535]"""
 def do_quit(self, arg):
         """quit EMB shell
 Usage: quit"""
-        print("\nBye!")
+        if self._e.debug:
+            print("\nBye!")
         AllOFF()
         return True
 

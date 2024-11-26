@@ -4,7 +4,7 @@ import cmd, sys, readline, shlex
 from ebi import EBI
 
 import time
-from time import gmtime, strftime
+from time import localtime, strftime
 
 #GPIO definitions=======
 import gpiod
@@ -175,6 +175,9 @@ class EmbitShell(cmd.Cmd):
         self._e.network_start()
         if(auto == 'A'):
             self.do_auto()
+        if(auto == 'B'):
+            self.do_debug("0")
+            self.do_auto()
         super().__init__()
 
     def default(self, line):
@@ -185,10 +188,13 @@ class EmbitShell(cmd.Cmd):
             return True
         return super().default(line)
 
-    def do_debug(self, arg):
-        """toggle debug mode
-Usage: debug"""
-        self._e.debug = not self._e.debug
+    def do_debug(self, status=None):
+        """set debug mode
+Usage: debug 0 or 1"""
+        if(status == "0"):
+            self._e.debug = False
+        if(status == "1"):
+            self._e.debug = True        
         if self._e.debug:
             print("{'debug': %s}" % self._e.debug)
 
@@ -462,7 +468,7 @@ timeout in seconds; specify no timeout to wait forever"""
             Led('R', 'OFF')
         else:
             if self._e.debug:
-                print ("\r", strftime("%H:%M:%S", gmtime()), end='' )
+                print ("\r", strftime("%H:%M:%S", localtime()), end='' )
 
     def do_abp(self, arg):
         """set lorawan protocol parameters with ABP (NO auto join)
@@ -660,11 +666,11 @@ if __name__ == '__main__':
     n = len(sys.argv)
     if n > 1:
         auto = sys.argv[1]
-        if(auto == "A"):
+        if((auto == "A") or (auto == "B")):
             print("OK")
         else:
             print('Parameter error')
-            print('Input nothing or A for auto receive')
+            print('Input nothing, A for auto receive or B for auto receive without debug')
             exit()
     if n > 2:
         device = sys.argv[2]

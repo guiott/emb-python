@@ -96,7 +96,7 @@ class EBI:
         0x01: 'RX WINDOW',
         0x02: 'TX ONLY',
     }
-    def __init__(self,dev, debug=True):
+    def __init__(self,dev, debug=False):
         self.debug = debug
         if self.debug:
             print("---Start Init")

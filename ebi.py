@@ -186,6 +186,21 @@ class EBI:
         if self.debug:
             print('      Firmware: ', self.hex(ans))
         return { 'firmware_version': self.hex(ans) }
+    def uart(self, speed=None):
+        if self.debug:
+            print('UART config')
+        req_speed = [0]
+        req_flow = [0]
+        try:
+            req_speed = [int(speed) % 256]
+        except:
+            pass
+        ans = self.send([0x09]+req_speed+req_flow)
+        if req_speed:
+            return { 'status': EBI.STATUS.get(ans[0],ans[0]) }
+        if self.debug:
+            print('      Speed: ', self.hex(ans))
+        return { 'speed': ans[0] }
     def output_power(self, power=None):
         if self.debug:
             print('Output Power')

@@ -4,6 +4,7 @@ import cmd, sys, readline, shlex
 from ebi import EBI
 
 import time
+from time import gmtime, strftime
 
 #GPIO definitions=======
 import gpiod
@@ -112,6 +113,10 @@ def deviceSet(self, devType, devNum, devStatus):
         if devNum in ['1', '2']:
             if devStatus in ['ON', 'OFF']:
                 Rel(devNum, devStatus)
+                if(devNum=='1'):
+                    Led('r',devStatus)
+                else:
+                    Led('g',devStatus)
             else:
                 if self._e.debug:
                     print("Dev Status not recognized")
@@ -155,7 +160,6 @@ appKey = config.appKey
 RXtimeout = config.RXtimeout
 
 class EmbitShell(cmd.Cmd):
-
     prompt = "EMB> "
 
     def __init__(self, device):
@@ -169,6 +173,8 @@ class EmbitShell(cmd.Cmd):
         self._params = { 'channel': 1, 'sf': 7, 'bw': 0, 'cr': 1 } # 868.100 MHz, 128 Chips/symbol, 125 kHz, 4/5
         self._e.operating_channel(*self._params.values())
         self._e.network_start()
+        if(auto == 'A'):
+            self.do_auto()
         super().__init__()
 
     def default(self, line):
@@ -197,6 +203,29 @@ Usage: state"""
         """reset device
 Usage: reset"""
         ret = self._e.reset()
+        if self._e.debug:
+            print(ret)
+ 
+    def do_uart(self, arg):
+        """get or set device serial communication
+Usage: uart [value]
+
+value: [0-256]"""
+        value = None
+        if arg:
+            try:
+                value = int(arg) % 256
+            except ValueError:
+                if self._e.debug:
+                    print("Invalid UART value {}".format(arg))
+                return
+        state = self._e.device_state()
+        should_stop = value and state['state'] == 'Online'
+        if should_stop:
+            self._e.network_stop()
+        ret = self._e.uart(value)
+        if should_stop:
+            self._e.network_start()
         if self._e.debug:
             print(ret)
 
@@ -423,11 +452,17 @@ timeout in seconds; specify no timeout to wait forever"""
             options, RSSI, FPort, data = self._e.receive(arg1, RXtimeout)
         else:
             options, RSSI, FPort, data = self._e.receive(0, RXtimeout)
-        if self._e.debug:
-            print("Opt: ", options, " - RSSI:" , RSSI, " - FPort: ", FPort, " - Data: ", data)
         if RSSI:
+            Led('R', 'ON')
             dataSplit=data.split(":")
             deviceSet(self, dataSplit[0], dataSplit[1], dataSplit[2])
+            if self._e.debug:
+                print("RSSI:" , RSSI, " - FPort: ", FPort, " - Data: ", data)
+            time.sleep(0.5)
+            Led('R', 'OFF')
+        else:
+            if self._e.debug:
+                print ("\r", strftime("%H:%M:%S", gmtime()), end='' )
 
     def do_abp(self, arg):
         """set lorawan protocol parameters with ABP (NO auto join)
@@ -599,6 +634,18 @@ value: [0-65535]"""
         if self._e.debug:
             print(self._e.device_state())
 
+    def do_auto(self):
+        """Put the module in continuos receive
+Usage: auto
+
+value: []"""
+        self.do_lorawan(0)
+        if self._e.debug:
+            print('RX loop')  
+        self.do_send('dummy')
+        while(1):   
+            self.do_receive()
+            
 def do_quit(self, arg):
         """quit EMB shell
 Usage: quit"""
@@ -609,10 +656,19 @@ Usage: quit"""
 
 if __name__ == '__main__':
     device = "/dev/ttyS6"
-    try:
-        device = sys.argv[1]
-    except:
-        pass
+    auto = None
+    n = len(sys.argv)
+    if n > 1:
+        auto = sys.argv[1]
+        if(auto == "A"):
+            print("OK")
+        else:
+            print('Parameter error')
+            print('Input nothing or A for auto receive')
+            exit()
+    if n > 2:
+        device = sys.argv[2]
+
     shell = EmbitShell(device)
     try:
         shell.cmdloop()

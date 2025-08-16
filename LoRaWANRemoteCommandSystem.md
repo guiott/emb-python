@@ -9,10 +9,10 @@ Each SBC runs dedicated Python software, with one acting as the **command sender
 
 The architecture relies on a LoRaWAN Network Server (NS) as the intermediary.  
 
-- **First SBC (Command sender):**  
+- **First SBC (BeagleBone Black) (Command sender):**  
   Runs [`LoRaWAN_send.py`](https://github.com/guiott/LoRaWAN_DownLink/blob/main/LoRaWAN_send.py), which connects to the NS via gRPC, prepares downlink frames, and schedules them for transmission.  
 
-- **Second SBC (Command receiver/executor):**  
+- **Second SBC (Acqua BOX) (Command receiver/executor):**  
   Runs [`embitshell.py`](https://github.com/guiott/emb-python/blob/main/embitshell.py) as a background service, which receives downlink payloads, interprets them as shell-like commands, and executes them on the local system.  
 
 This configuration allows high-level commands issued on one SBC to be executed remotely on another, with the LoRaWAN network providing long-range communication.  
@@ -49,16 +49,17 @@ This configuration allows high-level commands issued on one SBC to be executed r
 
 ---
 
-## Block Diagram (Textual Representation)
-
 ---
 
 ## Block Diagram (Graphical Representation)
 
 ```mermaid
 flowchart TD
-    A[User Command Input] --> B[First SBC: LoRaWAN_send.py<br/>- gRPC client<br/>- Message encoding<br/>- Downlink dispatch]
-    B --> C[LoRaWAN Network Server<br/>- Routing<br/>- Security<br/>- Transmission]
-    C --> D[LoRaWAN Network]
-    D --> E[Second SBC: embitshell.py<br/>- Payload reception<br/>- Command parsing<br/>- Local execution]
-    E --> F[Remote Device / System Control]
+    A["User Command Input"] -- LAN/WAN --> B["First SBC<br>LoRaWAN_send.py:<br>gRPC client<br>Message encoding<br>Downlink dispatch"]
+    B -- gRPC --> C["LoRaWAN Network Server<br>Routing<br>Security<br>Transmission"]
+    C -- LoRa --> D["LoRaWAN Network"]
+    D -- LoRa --> E["Second SBC<br>embitshell.py:<br>Payload reception<br>Command parsing<br>Local execution"]
+    E -- GPIO --> F["Internal Devices<br>Relays<br>LEDs<br>Sensors"]
+    E -- RS485 --> G["RS485 Relay Controller<br>KMtronic 8-Channel"]
+
+    

@@ -1,10 +1,85 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 import cmd, sys, readline, shlex
 from ebi import EBI
 
 import time
 from time import localtime, strftime
+
+from colorama import Fore, Style
+
+# ============ LOGGING ===============
+import logging
+logger = logging.getLogger("embitshell")
+logger.setLevel(logging.ERROR)
+file_handler = logging.FileHandler("/srv/samba/Acqua_Samba/emb-python/embitshell_errors.log")
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+# ====================================
+
+#=RS485 external program=======
+import subprocess, atexit
+from pathlib import Path 
+
+# ================= RS485 runner (KMT_RS485.py) =================
+# Percorso al programma KMT_RS485.py (adatta al tuo path reale)
+RS485_PROG = str(Path(__file__).resolve().parent / "KMT_RS485.py")
+RS485_PORT = "/dev/ttyS4"   # porta RS485
+RS485_ID   = "1"            # ID scheda KMTronic
+
+_rs485 = None  # processo persistente
+
+def _rs485_start():
+    """Avvia KMT_RS485.py in modalità interattiva (stdin aperta)."""
+    global _rs485
+    if _rs485 is None or _rs485.poll() is not None:
+        cmd = ["python3", RS485_PROG, "--port", RS485_PORT, "--id", RS485_ID]
+        _rs485 = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,  # no spam on stdout
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1
+        )
+
+def _rs485_send(line: str):
+    """Invia una riga di comando a KMT_RS485 (es. 'ON 1')."""
+    try:
+        _rs485_start()
+        _rs485.stdin.write(line.strip() + "\n")
+        _rs485.stdin.flush()
+    except Exception as e:
+        logger.error(f"RS485 error: {e}")
+        print("RS485 error:", e)
+
+def rs485_on(ch: str):
+    """Accende uno o più relè: ch = '1' oppure '1,3,5' oppure 'ALL'."""
+    _rs485_send(f"ON {ch}")
+
+def rs485_off(ch: str):
+    """Spegne uno o più relè."""
+    _rs485_send(f"OFF {ch}")
+
+def rs485_off_all():
+    """Spegne tutti i relè della scheda RS485."""
+    _rs485_send("OFF A")
+
+@atexit.register
+def _rs485_cleanup():
+    """Tenta di chiudere in modo pulito all'uscita."""
+    try:
+        if _rs485 and _rs485.poll() is None:
+            # modo pulito: invia EXIT se supportato, altrimenti termina
+            try:
+                _rs485_send("EXIT")
+            except Exception:
+                pass
+            _rs485.terminate()
+    except Exception:
+        pass
+# ==============================================================
 
 #GPIO definitions=======
 import gpiod
@@ -27,128 +102,210 @@ def GPIO_conf(pin_name, chip_name, consumer_name, direction, default_val=0):
         raise ValueError("set direction to 'in' or 'out'")
     return GPIO_line
 
-Rel1 = GPIO_conf("pioA13", chipA, "Rel1", "out", 0)
-Rel2 = GPIO_conf("pioA14", chipA, "Rel2", "out", 0)
-led_green = GPIO_conf("pioD26", chipD, "led_green", "out", 1)
-led_red = GPIO_conf("pioD14", chipD, "led_red", "out", 1)
-rgb_red = GPIO_conf("pioD19", chipD, "RGB_red", "out", 1)
-rgb_green = GPIO_conf("pioD31", chipD, "RGB_green", "out", 1)
-rgb_blue = GPIO_conf("pioD30", chipD, "RGB_blue", "out", 1)
-DIG_OUT1 = GPIO_conf("pioC13", chipC, "DIG_OUT1", "out", 0)
-DIG_OUT2 = GPIO_conf("pioC12", chipC, "DIG_OUT2", "out", 0)
-PCIe_ON = GPIO_conf("pioC20", chipC, "PCIe_ON", "out", 0)
-DIG_IN1 = GPIO_conf("pioA15", chipA, "DIG_IN1", "in")
-DIG_IN2 = GPIO_conf("pioC14", chipC, "DIG_IN2", "in")
+rel1 = GPIO_conf("pioA13", chipA, "Rel1", "out", 0)
+rel2 = GPIO_conf("pioA14", chipA, "Rel2", "out", 0)
+ledGreen = GPIO_conf("pioD26", chipD, "led_green", "out", 1)
+ledRed = GPIO_conf("pioD14", chipD, "led_red", "out", 1)
+rgbRed = GPIO_conf("pioD19", chipD, "RGB_red", "out", 1)
+rgbGreen = GPIO_conf("pioD31", chipD, "RGB_green", "out", 1)
+rgbBlue = GPIO_conf("pioD30", chipD, "RGB_blue", "out", 1)
+digOut1 = GPIO_conf("pioC13", chipC, "DIG_OUT1", "out", 0)
+digOut2 = GPIO_conf("pioC12", chipC, "DIG_OUT2", "out", 0)
+pcieOn = GPIO_conf("pioC20", chipC, "PCIe_ON", "out", 0)
+digIn1 = GPIO_conf("pioA15", chipA, "DIG_IN1", "in")
+digIn2 = GPIO_conf("pioC14", chipC, "DIG_IN2", "in")
 
-def Rel(RelN, RelState='OFF'):
-    if(RelState == 'ON'):
-        State=1
-    else:
-        State=0
+# =========================
+# Safe wrapper per send_dataLW
+# =========================
+class SafeEBI(EBI):
+    def safe_send_dataLW(self, payload, dst=None):
+        try:
+            ret = self.send_dataLW(payload=payload, dst=dst)
+            if ret is None:
+                logger.warning("send_dataLW ha restituito None (nessuna risposta dal modulo)")
+                return {"status": "NoResponse"}
+            return ret
+        except Exception as e:
+            logger.error(f"Errore in send_dataLW: {e}")
+            return {"status": "Exception", "error": str(e)}
 
-    if(RelN=='1'):
-        Rel1.set_values([State])
-    elif(RelN=='2'):
-        Rel2.set_values([State])
-    else:
-        Rel1.set_values([0])
-        Rel2.set_values([0])
+class DeviceController:
+    def __init__(self, shell, rel1, rel2, ledGreen, ledRed, rgbRed, rgbGreen, rgbBlue, digOut1, digOut2, pcieOn, digIn1, digIn2):
+        self.shell = shell
+        self.rel1 = rel1
+        self.rel2 = rel2
+        self.ledGreen = ledGreen
+        self.ledRed = ledRed
+        self.rgbRed = rgbRed
+        self.rgbGreen = rgbGreen
+        self.rgbBlue = rgbBlue
+        self.digOut1 = digOut1
+        self.digOut2 = digOut2
+        self.pcieOn = pcieOn
+        self.digIn1 = digIn1
+        self.digIn2 = digIn2
 
-leds = ['r','g','R','G','B']
-def Led(LED, LedState='OFF'):
-    if(LedState == 'ON'):
-        State=0
-    else:
-        State=1
+    def rel(self, relN, relState='OFF'):
+        state = 1 if relState == 'ON' else 0
+        if(relN=='1'):
+            self.rel1.set_values([state])
+        elif(relN=='2'):
+            self.rel2.set_values([state])
+        else:
+            # se il numero non è valido → spegne entrambi
+            self.rel1.set_values([0])
+            self.rel2.set_values([0])
+            relN = 'ERR'
+            relState = 'INVALID'
 
-    if(LED=='g'):
-        led_green.set_values([State])
-    elif(LED=='r'):
-        led_red.set_values([State])
-    elif(LED=='R'):
-        rgb_red.set_values([State])
-    elif(LED=='G'):
-        rgb_green.set_values([State])
-    elif(LED=='B'):
-        rgb_blue.set_values([State])
-    else:
-        led_green.set_values([1])
-        led_green.set_values([1])
-        rgb_red.set_values([1])
-        rgb_green.set_values([1])
-        rgb_blue.set_values([1])
+        # Feedback LoRaWAN uplink
+        self.shell.do_send("T:R;N:" + relN + ";S:" + relState)
+        if self.shell._e.debug:
+            print(Fore.RED + "T:R;N:" + relN + ";S:" + relState)
+            print("Relay end" + Style.RESET_ALL)
+        
+    relxs = ['A', '1', '2', '3', '4', '5', '6', '7', '8']
+    def relX(self, relXN, relXState='OFF'):
+        """Gestione dei relè esterni su RS485"""
+        if(relXN not in self.relxs):
+            #print("RelX not recognized")
+            return
+        if(relXState == 'ON'):
+            rs485_on(relXN)
+        elif(relXState == 'OFF'):
+            rs485_off(relXN)
+        # Feedback LoRaWAN uplink
+        self.shell.do_send("T:X;N:" + relXN + ";S:" + relXState)
+        if self.shell._e.debug:
+            print(Fore.RED + "T:X;N:" + relXN + ";S:" + relXState)
+            print("RS485 end" + Style.RESET_ALL)
 
-digs = ['P', '1', '2']
-def Dig(digN, digStatus):
-    if(digStatus == 'ON'):
-        State=1
-    else:
-        State=0    
-    if(digN=='P'):
-        PCIe_ON.set_values([State])
-    elif(digN=='1'):
-        DIG_OUT1.set_values([State])
-    elif(digN=='2'):
-        DIG_OUT2.set_values([State])
-    else:
-        PCIe_ON.set_values([0])
-        DIG_OUT1.set_values([0])
-        DIG_OUT2.set_values([0])
+    leds = ['r','g','R','G','B']
+    def led(self, led, ledState='OFF'):
+        state = 0 if ledState == 'ON' else 1 #Active low
 
-def AllOFF():
-    Rel(1, 'OFF')
-    Led('g', 'OFF')
-    Rel(2, 'OFF') 
-    Led('r', 'OFF')
-    Led('rgb_r','OFF')
-    Led('rgb_g','OFF')
-    Led('rgb_b','OFF')
-    PCIe_ON.set_values([0])
-    DIG_OUT1.set_values([0])
-    DIG_OUT2.set_values([0])
+        if(led=='g'):
+            self.ledGreen.set_values([state])
+        elif(led=='r'):
+            self.ledRed.set_values([state])
+        elif(led=='R'):
+            self.rgbRed.set_values([state])
+        elif(led=='G'):
+            self.rgbGreen.set_values([state])
+        elif(led=='B'):
+            self.rgbBlue.set_values([state])
+        else:
+            self.ledRed.set_values([1])
+            self.ledGreen.set_values([1])
+            self.rgbRed.set_values([1])
+            self.rgbGreen.set_values([1])
+            self.rgbBlue.set_values([1])
+        self.shell.do_send("T:L;N:" + led + ";S:" + ledState)
+        if self.shell._e.debug:
+            print(Fore.RED + "T:L;N:" + led + ";S:" + ledState)
+            print("LED end" + Style.RESET_ALL)
 
-def deviceSet(self, devType, devNum, devStatus):  
-    #print(devType, devNum, devStatus)
-    if devType == 'R':
-        if devNum in ['1', '2']:
-            if devStatus in ['ON', 'OFF']:
-                Rel(devNum, devStatus)
-                if(devNum=='1'):
-                    Led('r',devStatus)
+
+    digs = ['P', '1', '2']
+    """Gestione delle uscite digitali"""
+    def dig(self, digN, digStatus):
+        state = 1 if digStatus == 'ON' else 0 
+        if(digN=='P'):
+            self.pcieOn.set_values([state])
+        elif(digN=='1'):
+            self.digOut1.set_values([state])
+        elif(digN=='2'):
+            self.digOut2.set_values([state])
+        else:
+            self.pcieOn.set_values([0])
+            self.digOut1.set_values([0])
+            self.digOut2.set_values([0])
+        self.shell.do_send("T:D;N:" + digN + ";S:" + digStatus)
+        if self.shell._e.debug:
+            print(Fore.RED + "T:D;N:" + digN + ";S:" + digStatus)
+            print("Digs end" + Style.RESET_ALL)
+
+
+    def AllOFF(self):
+        """Spegne tutte le periferiche"""
+        self.rel1.set_values([0])
+        self.rel2.set_values([0])
+        self.ledGreen.set_values([1])
+        self.ledRed.set_values([1])
+        self.rgbRed.set_values([1])
+        self.rgbGreen.set_values([1])
+        self.rgbBlue.set_values([1])
+        self.digOut1.set_values([0])
+        self.digOut2.set_values([0])
+        self.pcieOn.set_values([0])
+        self.relX("A", "OFF")
+        self.shell.do_send("T:A;N:A;S:OFF")
+
+        if self.shell._e.debug:
+            print(Fore.RED + "T:A;N:A;S:OFF")
+            print("AllOFF end" + Style.RESET_ALL)
+
+    def deviceSet(self, devType, devNum, devStatus):  
+        """
+        Decodifica del comando ricevuto e dispatch alla funzione corretta.
+        device_type: R, X, L, D, A
+        device_num: numero o identificativo (es. '1', '2', 'A')
+        device_status: ON / OFF
+        """
+        if self.shell._e.debug:
+                print(Fore.GREEN + "Parsed data: " )         
+                print(devType, devNum, devStatus + Style.RESET_ALL)
+
+        if devType == 'R':
+            if devNum in ['1', '2']:
+                if devStatus in ['ON', 'OFF']:
+                    self.rel(devNum, devStatus)
+                    """
+                    if(devNum=='1'):
+                        self.led('r',devStatus)
+                    else:
+                        self.led('g',devStatus)
+                    """
                 else:
-                    Led('g',devStatus)
+                    if self.shell._e.debug:
+                        print("Dev Status not recognized")
             else:
-                if self._e.debug:
-                    print("Dev Status not recognized")
-        else:
-            if self._e.debug:
-                print("Dev Num not recognized") 
-    elif devType == 'L':
-        if devNum in leds:
-            if devStatus in ['ON', 'OFF']:
-                Led(devNum, devStatus)
+                if self.shell._e.debug:
+                    print("Dev Num not recognized") 
+        elif devType == 'X':
+            if devNum in self.relxs:
+                if devStatus in ['ON', 'OFF']:
+                    self.relX(devNum, devStatus)
+                else:
+                    if self.shell._e.debug:
+                        print("Dev Status not recognized")
             else:
-                if self._e.debug:
-                    print("Dev Status not recognized")
-        else:
-            if self._e.debug:
-                print("Dev Num not recognized") 
-    elif devType == 'D':
-        if devNum in digs:
-            if devStatus in ['ON', 'OFF']:
-                Dig(devNum, devStatus)
+                if self.shell._e.debug:
+                    print("Dev Num not recognized")
+        elif devType == 'L':
+            if devNum in self.leds:
+                if devStatus in ['ON', 'OFF']:
+                    self.led(devNum, devStatus)
+                else:
+                    if self.shell._e.debug:
+                        print("Dev Status not recognized")
             else:
-                if self._e.debug:
-                    print("Dev Status not recognized")
+                if self.shell._e.debug:
+                    print("Dev Num not recognized") 
+        elif devType == 'D':
+            if devNum in self.digs:
+                if devStatus in ['ON', 'OFF']:
+                    self.dig(devNum, devStatus)
+                else:
+                    if self.shell._e.debug:
+                        print("Dev Status not recognized")
+            else:
+                if self.shell._e.debug:
+                    print("Dev Num not recognized") 
         else:
-            if self._e.debug:
-                print("Dev Num not recognized") 
-    elif devType == 'A':
-        AllOFF()
-    else:
-        if self._e.debug:
-            print("Dev Type not recognized")  
-#=======GPIO definitions
+            if self.shell._e.debug:
+                print("Dev Type not recognized")  
 
 #rename config.py_TEMPLATE config.py and edit your keys accordingly
 import config
@@ -162,8 +319,18 @@ RXtimeout = config.RXtimeout
 class EmbitShell(cmd.Cmd):
     prompt = "EMB> "
 
-    def __init__(self, device):
-        self._e = EBI(device)
+    def __init__(self, device, auto=None):
+        self._e = SafeEBI(device)   # <--- uso la classe "sicura"
+
+        # passo tutte le risorse hardware al controller
+        self.controller = DeviceController(
+            self,
+            rel1, rel2,
+            ledGreen, ledRed, rgbRed, rgbGreen, rgbBlue,
+            digOut1, digOut2, pcieOn,
+            digIn1, digIn2
+        )
+
         self._e.reset()
         state = self._e.state
         self.intro = "EMBIT module {embit_module} - FW {firmware_version}\n".format(**state)
@@ -174,6 +341,7 @@ class EmbitShell(cmd.Cmd):
         self._e.operating_channel(*self._params.values())
         self._e.network_start()
         if(auto == 'A'):
+            self.do_debug("1")
             self.do_auto()
         if(auto == 'B'):
             self.do_debug("0")
@@ -184,7 +352,7 @@ class EmbitShell(cmd.Cmd):
         if line == "EOF":
             if self._e.debug:
                 print("\nBye!")
-            AllOFF()
+            self.controller.AllOFF()
             return True
         return super().default(line)
 
@@ -414,16 +582,15 @@ dest: [0-65535]; specify no dest for broadcast"""
         payload, dst = (shlex.split(arg)+[None])[:2]
         payload = list(bytes(payload, 'utf8'))
         if self._e.debug:
-            print(payload)
-            print(dst)  
-        if dst != None:
+            print(payload, dst)
+        if dst is not None:
             try:
                 dst = int(dst)
                 dst = [ (dst & 0xFF00) >> 8, dst & 0x00FF ]
             except ValueError:
                 print("Invalid destination value {}".format(dst))
                 return
-        ret = self._e.send_dataLW(payload=payload, dst=dst)
+        ret = self._e.safe_send_dataLW(payload=payload, dst=dst)  # <--- uso safe
         if self._e.debug:
             print(ret)
 
@@ -459,13 +626,16 @@ timeout in seconds; specify no timeout to wait forever"""
         else:
             options, RSSI, FPort, data = self._e.receive(0, RXtimeout)
         if RSSI:
-            Led('R', 'ON')
-            dataSplit=data.split(":")
-            deviceSet(self, dataSplit[0], dataSplit[1], dataSplit[2])
+            #self.controller.led('R', 'ON')
+
             if self._e.debug:
-                print("RSSI:" , RSSI, " - FPort: ", FPort, " - Data: ", data)
-            time.sleep(0.5)
-            Led('R', 'OFF')
+                print(Fore.GREEN + "Received data: " )
+                print("RSSI:" , RSSI, " - FPort: ", FPort, " - Data: ", data + Style.RESET_ALL)
+            
+            dataSplit=data.split(":")
+            self.controller.deviceSet(dataSplit[0], dataSplit[1], dataSplit[2])
+            #time.sleep(0.5)
+            #self.controller.led('R', 'OFF')
         else:
             if self._e.debug:
                 print ("\r", strftime("%H:%M:%S", localtime()), end='' )
@@ -648,21 +818,25 @@ value: []"""
         self.do_lorawan(0)
         if self._e.debug:
             print('RX loop')  
-        self.do_send('dummy')
+        self.do_send('T:OK;N:OK;S:OK')   
         while(1):   
             self.do_receive()
             
-def do_quit(self, arg):
-        """quit EMB shell
-Usage: quit"""
-        if self._e.debug:
-            print("\nBye!")
-        AllOFF()
-        return True
+    def do_quit(self, arg):
+            """quit EMB shell
+    Usage: quit"""
+            if self._e.debug:
+                print("\nBye!")
+            self.controller.AllOFF()
+            return True
 
 if __name__ == '__main__':
+    #Avvio processo RS485==============
+    _rs485_start()  # avvio subito all'inizio
+    
     device = "/dev/ttyS6"
     auto = None
+
     n = len(sys.argv)
     if n > 1:
         auto = sys.argv[1]
@@ -675,11 +849,11 @@ if __name__ == '__main__':
     if n > 2:
         device = sys.argv[2]
 
-    shell = EmbitShell(device)
+    shell = EmbitShell(device, auto)
+    shell.controller.AllOFF()
+
     try:
         shell.cmdloop()
     except KeyboardInterrupt:
         print("\nBye!")
-        AllOFF()
-
-
+        shell.controller.AllOFF()

@@ -4,3 +4,14 @@ __pycache__
 ._*
 config.py
 .DS_Store
+embitshell copia.py
+.gitignore
+embitshell-GPT.py
+__OLD/embitshellOLD.py
+__OLD/Temp.py
+__OLD/ebi.py
+__OLD/ebiOLD.py
+embitshell_errors.log
+__OLD/embitshellGPT1.py
+__OLD/ebiGPT.py
+ebi_errors.log

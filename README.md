@@ -6,6 +6,8 @@ This repo contains a few Python scripts for interacting with EMB-LR1276 modules 
 - `sender.py`, `receiver.py` are two example scripts that rely on `ebi.py`
 - `embitshell.py` is an interactive shell offering a simplified interaction with the module, it can be used for an interface between LoRaWAN and SBC local hardware.
 
+This code has been written with the great help of Antonio Galea (https://github.com/ant9000) and ChatGPT
+
 REQUIREMENTS
 
 ```pip install pyserial```
